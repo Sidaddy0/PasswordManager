@@ -1,65 +1,179 @@
-# Password Manager
-from json import dump, load
-from random import sample
-from string import printable
+import sqlite3, hashlib
+from tkinter import *
+from tkinter import simpledialog
+from functools import partial
 
-from pybase64 import b64decode, b64encode
+#database code
+with sqlite3.connect('PyPass.db') as db:
+    cursor = db.cursor()
 
-encrypt = lambda x: b64encode(bytes(str(x), "ascii"))
-decrypt = lambda x: b64decode(bytes(str(x), "ascii"), validate = True)
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS masterpassword(
+id INTEGER PRIMARY KEY,
+password TEXT NOT NULL);
+""")
 
-everything = printable[0:90]
+cursor.execute("""
+CREATE TABLE IF NOT EXISTS vault(
+id INTEGER PRIMARY KEY,
+website TEXT NOT NULL,
+username TEXT NOT NULL,
+password TEXT NOT NULL);
+""")
 
-def search(type_of_search: int):
-    if type_of_search == 1:
+#Create PopUp
+def popUp(text):
+    answer = simpledialog.askstring("input string", text)
+    print(answer)
+
+    return answer
+
+#Initiate window
+window = Tk()
+window.update()
+
+window.title("Password Vault")
+
+def hashPassword(input):
+    hash1 = hashlib.md5(input)
+    hash1 = hash1.hexdigest()
+
+    return hash1
+
+def firstTimeScreen():
+    window.geometry('250x125')
+    lbl = Label(window, text="Choose a Master Password")
+    lbl.config(anchor=CENTER)
+    lbl.pack()
+
+    txt = Entry(window, width=20)
+    txt.pack()
+    txt.focus()
+
+    lbl1 = Label(window, text="Re-enter password")
+    lbl1.config(anchor=CENTER)
+    lbl1.pack()
+
+    txt1 = Entry(window, width=20, show="*")
+    txt1.pack()
+
+    def savePassword():
+        if txt.get() == txt1.get():
+            hashedPassword = hashPassword(txt.get().encode('utf-8'))
+            
+            insert_password = """INSERT INTO masterpassword(password)
+            VALUES(?) """
+            cursor.execute(insert_password, [(hashedPassword)])
+            db.commit()
+
+            vaultScreen()
+        else:
+            lbl.config(text="Passwords dont match")
+
+    btn = Button(window, text="Save", command=savePassword)
+    btn.pack(pady=5)
+
+def loginScreen():
+    for widget in window.winfo_children():
+        widget.destroy()
+
+    window.geometry('250x125')
+
+    lbl = Label(window, text="Enter  Master Password")
+    lbl.config(anchor=CENTER)
+    lbl.pack()
+
+    txt = Entry(window, width=20, show="*")
+    txt.pack()
+    txt.focus()
+
+    lbl1 = Label(window)
+    lbl1.config(anchor=CENTER)
+    lbl1.pack(side=TOP)
+
+    def getMasterPassword():
+        checkHashedPassword = hashPassword(txt.get().encode('utf-8'))
+        cursor.execute('SELECT * FROM masterpassword WHERE id = 1 AND password = ?', [(checkHashedPassword)])
+        return cursor.fetchall()
+
+    def checkPassword():
+        password = getMasterPassword()
+
+        if password:
+            vaultScreen()
+        else:
+            txt.delete(0, 'end')
+            lbl1.config(text="Wrong Password")
+
+    btn = Button(window, text="Submit", command=checkPassword)
+    btn.pack(pady=5)
+
+
+def vaultScreen():
+    for widget in window.winfo_children():
+        widget.destroy()
+
+    def addEntry():
+        text1 = "Website"
+        text2 = "Username"
+        text3 = "Password"
+        website = popUp(text1)
+        username = popUp(text2)
+        password = popUp(text3)
+
+        insert_fields = """INSERT INTO vault(website, username, password) 
+        VALUES(?, ?, ?) """
+        cursor.execute(insert_fields, (website, username, password))
+        db.commit()
+
+        vaultScreen()
+
+    def removeEntry(input):
+        cursor.execute("DELETE FROM vault WHERE id = ?", (input,))
+        db.commit()
+        vaultScreen()
+
+    window.geometry('750x550')
+    window.resizable(height=None, width=None)
+    lbl = Label(window, text="Password Vault")
+    lbl.grid(column=1)
+
+    btn = Button(window, text="+", command=addEntry)
+    btn.grid(column=1, pady=10)
+
+    lbl = Label(window, text="Website")
+    lbl.grid(row=2, column=0, padx=80)
+    lbl = Label(window, text="Username")
+    lbl.grid(row=2, column=1, padx=80)
+    lbl = Label(window, text="Password")
+    lbl.grid(row=2, column=2, padx=80)
+
+    cursor.execute('SELECT * FROM vault')
+    if (cursor.fetchall() != None):
+        i = 0
         while True:
-            try:
-                return decrypt(website_search[input("Enter website name: ")])
-            except Exception as e:
-                print(e)
-    elif type_of_search == 2:
-        while True:
-            try:
-                return decrypt(username_search[input("Enter username: ")])
-            except Exception as e:
-                print(e)
+            cursor.execute('SELECT * FROM vault')
+            array = cursor.fetchall()
 
-def store_password(website: str, username: str):
-    # Enter a password or generate a random password
-    while True:
-        try:
-            x = int(input("Type 1 if you want to store your own password and type 2 if you want to generate a password for the website. "))
-            break
-        except Exception as e:
-            print(e)
-    
-    if x == 1:
-        password = input("Password: ")
-    elif x == 2:
-        length = int(input("Length of password: "))
-        password = "".join(sample(everything, length))
-    # Hash the password
-    password = encrypt(password)
-    # Store the password
-    username_search[username] = password
-    website_search[website] = password
+            lbl1 = Label(window, text=(array[i][1]), font=("Helvetica", 12))
+            lbl1.grid(column=0, row=(i+3))
+            lbl2 = Label(window, text=(array[i][2]), font=("Helvetica", 12))
+            lbl2.grid(column=1, row=(i+3))
+            lbl3 = Label(window, text=(array[i][3]), font=("Helvetica", 12))
+            lbl3.grid(column=2, row=(i+3))
 
-if __name__ == "__main__":
-    # HashMaps
-    with open("username_search.json", "r") as f:
-        username_search = load(f)
-    with open("website_search.json", "r") as f:
-        website_search = load(f)
+            btn = Button(window, text="Delete", command=  partial(removeEntry, array[i][0]))
+            btn.grid(column=3, row=(i+3), pady=10)
 
-    search_type = int(input("Type 1 to search by website, 2 to search by username, and 3 to store a new password. "))
-    if search_type == 1:
-        print(search(1))
-    elif search_type == 2:
-        print(search(2))
-    elif search_type == 3:
-        store_password(input("Enter website name: "), input("Enter username: "))
-        with open("username_search.json", "w") as f:
-            dump(dict(username_search), f)
-        with open("website_search.json", "w") as f:
-            dump(dict(website_search), f)
-        print("Successfully stored password.")
+            i = i +1
+
+            cursor.execute('SELECT * FROM vault')
+            if (len(cursor.fetchall()) <= i):
+                break
+
+cursor.execute('SELECT * FROM masterpassword')
+if (cursor.fetchall()):
+    loginScreen()
+else:
+    firstTimeScreen()
+window.mainloop()
